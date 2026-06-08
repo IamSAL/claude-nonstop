@@ -2,7 +2,8 @@ import { describe, it, beforeEach, afterEach } from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
-import { stripAnsi, extractResumeSessionId, buildResumeArgs, deactivateStaleChannels } from '../../../lib/runner.js';
+import { stripAnsi, extractResumeSessionId, buildResumeArgs, deactivateStaleChannels, resolvePreemptIntervalMs, resolvePreemptThreshold, PREEMPT_POLL_INTERVAL_MS } from '../../../lib/runner.js';
+import { PREEMPT_THRESHOLD } from '../../../lib/scorer.js';
 import { createTempDir, removeTempDir } from '../../helpers/temp-dir.js';
 
 describe('stripAnsi', () => {
@@ -361,5 +362,55 @@ describe('deactivateStaleChannels', () => {
     const result = JSON.parse(fs.readFileSync(channelMapPath, 'utf8'));
     assert.equal(result['term1-session'].active, false);
     assert.equal(result['other-project-session'].active, true);
+  });
+});
+
+describe('resolvePreemptIntervalMs', () => {
+  it('defaults to PREEMPT_POLL_INTERVAL_MS when unset', () => {
+    assert.equal(resolvePreemptIntervalMs({}), PREEMPT_POLL_INTERVAL_MS);
+  });
+
+  it('defaults when empty string', () => {
+    assert.equal(resolvePreemptIntervalMs({ CLAUDE_NONSTOP_PREEMPT_INTERVAL_MS: '' }), PREEMPT_POLL_INTERVAL_MS);
+  });
+
+  it('uses a valid positive override', () => {
+    assert.equal(resolvePreemptIntervalMs({ CLAUDE_NONSTOP_PREEMPT_INTERVAL_MS: '60000' }), 60000);
+  });
+
+  it('returns 0 (disabled) for zero', () => {
+    assert.equal(resolvePreemptIntervalMs({ CLAUDE_NONSTOP_PREEMPT_INTERVAL_MS: '0' }), 0);
+  });
+
+  it('returns 0 (disabled) for negative', () => {
+    assert.equal(resolvePreemptIntervalMs({ CLAUDE_NONSTOP_PREEMPT_INTERVAL_MS: '-5' }), 0);
+  });
+
+  it('returns 0 (disabled) for non-numeric', () => {
+    assert.equal(resolvePreemptIntervalMs({ CLAUDE_NONSTOP_PREEMPT_INTERVAL_MS: 'off' }), 0);
+  });
+});
+
+describe('resolvePreemptThreshold', () => {
+  it('defaults to PREEMPT_THRESHOLD when unset', () => {
+    assert.equal(resolvePreemptThreshold({}), PREEMPT_THRESHOLD);
+  });
+
+  it('uses a valid override in range', () => {
+    assert.equal(resolvePreemptThreshold({ CLAUDE_NONSTOP_PREEMPT_THRESHOLD: '50' }), 50);
+  });
+
+  it('accepts boundary values 0 and 100', () => {
+    assert.equal(resolvePreemptThreshold({ CLAUDE_NONSTOP_PREEMPT_THRESHOLD: '0' }), 0);
+    assert.equal(resolvePreemptThreshold({ CLAUDE_NONSTOP_PREEMPT_THRESHOLD: '100' }), 100);
+  });
+
+  it('falls back to default for out-of-range values', () => {
+    assert.equal(resolvePreemptThreshold({ CLAUDE_NONSTOP_PREEMPT_THRESHOLD: '150' }), PREEMPT_THRESHOLD);
+    assert.equal(resolvePreemptThreshold({ CLAUDE_NONSTOP_PREEMPT_THRESHOLD: '-1' }), PREEMPT_THRESHOLD);
+  });
+
+  it('falls back to default for non-numeric', () => {
+    assert.equal(resolvePreemptThreshold({ CLAUDE_NONSTOP_PREEMPT_THRESHOLD: 'high' }), PREEMPT_THRESHOLD);
   });
 });

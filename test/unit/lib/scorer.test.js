@@ -1,6 +1,6 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
-import { pickBestAccount, pickByPriority, PRIORITY_THRESHOLD } from '../../../lib/scorer.js';
+import { pickBestAccount, pickByPriority, pickPreemptAccount, PRIORITY_THRESHOLD, PREEMPT_THRESHOLD } from '../../../lib/scorer.js';
 
 const makeAccount = (name, sessionPercent, weeklyPercent, opts = {}) => ({
   name,
@@ -250,5 +250,120 @@ describe('pickByPriority', () => {
 describe('PRIORITY_THRESHOLD', () => {
   it('is 98', () => {
     assert.equal(PRIORITY_THRESHOLD, 98);
+  });
+});
+
+describe('pickPreemptAccount', () => {
+  it('preempts to a freed-up higher-priority account', () => {
+    const accounts = [
+      makeAccount('default', 5, 5, { priority: 1 }),     // freed up
+      makeAccount('enterprise', 10, 10, { priority: 4 }), // current
+    ];
+    const result = pickPreemptAccount(accounts, 'enterprise');
+    assert.ok(result);
+    assert.equal(result.account.name, 'default');
+  });
+
+  it('returns null when no higher-priority account is below threshold', () => {
+    const accounts = [
+      makeAccount('default', 95, 95, { priority: 1 }),    // still busy (>= 90)
+      makeAccount('enterprise', 10, 10, { priority: 4 }),
+    ];
+    assert.equal(pickPreemptAccount(accounts, 'enterprise'), null);
+  });
+
+  it('returns null when current account is already top priority', () => {
+    const accounts = [
+      makeAccount('default', 5, 5, { priority: 1 }),
+      makeAccount('backup', 5, 5, { priority: 2 }),
+    ];
+    assert.equal(pickPreemptAccount(accounts, 'default'), null);
+  });
+
+  it('returns null when current account has no priority', () => {
+    const accounts = [
+      makeAccount('default', 5, 5, { priority: 1 }),
+      makeAccount('current', 5, 5),
+    ];
+    assert.equal(pickPreemptAccount(accounts, 'current'), null);
+  });
+
+  it('does not preempt to a lower-priority account', () => {
+    const accounts = [
+      makeAccount('current', 5, 5, { priority: 2 }),
+      makeAccount('worse', 1, 1, { priority: 4 }),   // lower rank, even if idle
+    ];
+    assert.equal(pickPreemptAccount(accounts, 'current'), null);
+  });
+
+  it('picks the highest-priority among several freed-up accounts', () => {
+    const accounts = [
+      makeAccount('p1', 5, 5, { priority: 1 }),
+      makeAccount('p2', 1, 1, { priority: 2 }),       // lower usage but worse rank
+      makeAccount('enterprise', 10, 10, { priority: 4 }),
+    ];
+    const result = pickPreemptAccount(accounts, 'enterprise');
+    assert.equal(result.account.name, 'p1');
+  });
+
+  it('breaks ties between equal-priority candidates by utilization', () => {
+    const accounts = [
+      makeAccount('a', 40, 40, { priority: 2 }),
+      makeAccount('b', 10, 10, { priority: 2 }),
+      makeAccount('enterprise', 50, 50, { priority: 4 }),
+    ];
+    const result = pickPreemptAccount(accounts, 'enterprise');
+    assert.equal(result.account.name, 'b');
+  });
+
+  it('skips higher-priority accounts with usage errors', () => {
+    const accounts = [
+      makeAccount('default', 0, 0, { priority: 1, error: 'HTTP 401' }),
+      makeAccount('backup', 5, 5, { priority: 2 }),
+      makeAccount('enterprise', 50, 50, { priority: 4 }),
+    ];
+    const result = pickPreemptAccount(accounts, 'enterprise');
+    assert.equal(result.account.name, 'backup');
+  });
+
+  it('skips higher-priority accounts with no token', () => {
+    const accounts = [
+      makeAccount('default', 0, 0, { priority: 1, token: null }),
+      makeAccount('backup', 5, 5, { priority: 2 }),
+      makeAccount('enterprise', 50, 50, { priority: 4 }),
+    ];
+    const result = pickPreemptAccount(accounts, 'enterprise');
+    assert.equal(result.account.name, 'backup');
+  });
+
+  it('respects a custom threshold', () => {
+    const accounts = [
+      makeAccount('default', 70, 70, { priority: 1 }),
+      makeAccount('enterprise', 10, 10, { priority: 4 }),
+    ];
+    // Default threshold (90) would preempt; a 50 threshold should not.
+    assert.equal(pickPreemptAccount(accounts, 'enterprise', { threshold: 50 }), null);
+    assert.ok(pickPreemptAccount(accounts, 'enterprise', { threshold: 90 }));
+  });
+
+  it('returns null when current account is not in the list', () => {
+    const accounts = [makeAccount('default', 5, 5, { priority: 1 })];
+    assert.equal(pickPreemptAccount(accounts, 'missing'), null);
+  });
+
+  it('includes a descriptive reason', () => {
+    const accounts = [
+      makeAccount('default', 5, 8, { priority: 1 }),
+      makeAccount('enterprise', 10, 10, { priority: 4 }),
+    ];
+    const result = pickPreemptAccount(accounts, 'enterprise');
+    assert.ok(result.reason.includes('priority 1'));
+    assert.ok(result.reason.includes('enterprise'));
+  });
+});
+
+describe('PREEMPT_THRESHOLD', () => {
+  it('is below PRIORITY_THRESHOLD', () => {
+    assert.ok(PREEMPT_THRESHOLD < PRIORITY_THRESHOLD);
   });
 });

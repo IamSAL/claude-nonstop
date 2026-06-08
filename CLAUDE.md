@@ -116,6 +116,25 @@ These are **hard rules**. Do not relax them.
 - Truncate tmux message relay to `MAX_TMUX_MESSAGE_LENGTH` (4096 chars).
 - Slack `.env` files must live in `~/.claude-nonstop/.env`, never in the project directory.
 
+## Higher-Priority Preemption Watcher
+
+When running on a non-top-priority account (e.g. a last-resort account selected
+after the preferred ones were rate-limited), `runner.js` starts a background
+watcher that periodically re-checks usage. As soon as a **strictly
+higher-priority** account drops below the "freed up" threshold, the watcher
+preempts: it kills the current Claude process, migrates the session, and resumes
+on the better account. Preemptive swaps do **not** count against the swap budget.
+
+The watcher only runs when the current account has a priority and at least one
+account outranks it. Selection logic lives in `pickPreemptAccount` (`scorer.js`).
+
+Tunable via environment variables:
+
+| Variable | Default | Meaning |
+|----------|---------|---------|
+| `CLAUDE_NONSTOP_PREEMPT_INTERVAL_MS` | `300000` (5 min) | Poll interval. Set to `0` to disable the watcher. |
+| `CLAUDE_NONSTOP_PREEMPT_THRESHOLD` | `90` | A higher-priority account is "freed up" when its effective utilization is below this percent. Kept below `PRIORITY_THRESHOLD` (98) so we never swap back to a near-exhausted account. |
+
 ## Hook Notification Types
 
 `hook-notify.cjs` handles these notification types (passed as first CLI argument):
