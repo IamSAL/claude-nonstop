@@ -4,7 +4,7 @@
   "description": "Automatic Claude Code account switching on rate limits + Slack remote access",
   "type": "module",
   "bin": {
-    "claude-nonstop": "./bin/claude-nonstop.js"
+    "claude-nonstop": "bin/claude-nonstop.js"
   },
   "scripts": {
     "check": "node --check lib/*.js && node --check remote/*.cjs && node --check bin/claude-nonstop.js && node --check scripts/postinstall.js",
