@@ -177,6 +177,73 @@ describe('fetchProfile', () => {
     const result = await fetchProfile('sk-ant-oat01-test');
     assert.equal(result.name, 'Display Name');
   });
+
+  it('extracts organization identity (uuid, name, type) and account uuid', async () => {
+    // Real shape returned by api.anthropic.com/api/oauth/profile for an
+    // enterprise email account that has both an enterprise org and a personal
+    // Max plan org under the same email, per company policy.
+    globalThis.fetch = async () => ({
+      ok: true,
+      json: async () => ({
+        account: { uuid: 'acct-123', full_name: 'Alice Example', email: 'alice@example.com', has_claude_max: true },
+        organization: { uuid: 'org-ent-uuid', name: 'Acme Corp', organization_type: 'claude_enterprise' },
+      }),
+    });
+
+    const r = await fetchProfile('sk-ant-oat01-test');
+    assert.equal(r.email, 'alice@example.com');
+    assert.equal(r.orgId, 'org-ent-uuid');
+    assert.equal(r.orgName, 'Acme Corp');
+    assert.equal(r.orgType, 'claude_enterprise');
+    assert.equal(r.accountUuid, 'acct-123');
+  });
+
+  it('distinguishes two orgs under the SAME email by orgId', async () => {
+    const byOrg = {
+      'sk-ant-oat01-max': {
+        account: { uuid: 'acct-1', email: 'alice@example.com' },
+        organization: { uuid: 'org-max', name: 'Personal', organization_type: 'claude_max' },
+      },
+      'sk-ant-oat01-ent': {
+        account: { uuid: 'acct-1', email: 'alice@example.com' },
+        organization: { uuid: 'org-ent', name: 'Acme Corp', organization_type: 'claude_enterprise' },
+      },
+    };
+    globalThis.fetch = async (_url, opts) => {
+      const token = opts.headers.Authorization.replace('Bearer ', '');
+      return { ok: true, json: async () => byOrg[token] };
+    };
+
+    const max = await fetchProfile('sk-ant-oat01-max');
+    const ent = await fetchProfile('sk-ant-oat01-ent');
+    // Same email, same account uuid — but DIFFERENT org identity.
+    assert.equal(max.email, ent.email);
+    assert.equal(max.accountUuid, ent.accountUuid);
+    assert.notEqual(max.orgId, ent.orgId);
+  });
+
+  it('returns null org fields when organization is absent (email-only fallback)', async () => {
+    globalThis.fetch = async () => ({
+      ok: true,
+      json: async () => ({ account: { email: 'solo@example.com', full_name: 'Solo' } }),
+    });
+    const r = await fetchProfile('sk-ant-oat01-test');
+    assert.equal(r.orgId, null);
+    assert.equal(r.orgName, null);
+    assert.equal(r.email, 'solo@example.com');
+  });
+
+  it('returns null org fields on HTTP error and on network error', async () => {
+    globalThis.fetch = async () => ({ ok: false, status: 500 });
+    let r = await fetchProfile('sk-ant-oat01-test');
+    assert.equal(r.orgId, null);
+    assert.equal(r.orgName, null);
+
+    globalThis.fetch = async () => { throw new Error('net'); };
+    r = await fetchProfile('sk-ant-oat01-test');
+    assert.equal(r.orgId, null);
+    assert.equal(r.accountUuid, null);
+  });
 });
 
 describe('checkAllUsage', () => {
@@ -197,7 +264,7 @@ describe('checkAllUsage', () => {
       'sk-ant-oat01-b': { five_hour: { utilization: 0.60 }, seven_day: { utilization: 0.40 } },
     };
 
-    globalThis.fetch = async (url, opts) => {
+    globalThis.fetch = async (_url, opts) => {
       const token = opts.headers.Authorization.replace('Bearer ', '');
       return {
         ok: true,

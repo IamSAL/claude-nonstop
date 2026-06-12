@@ -254,9 +254,9 @@ If `npm install -g` fails with compilation errors (gyp, node-pty), the user need
 
 **The default account is automatic.** If the user already has Claude Code set up (`~/.claude` exists), it is auto-registered as "default" on first run. Verify with `claude-nonstop list`. Do not try to `add default` — it is handled automatically.
 
-For multi-account switching, the user needs additional accounts (each must be a **different** Claude subscription with a different email). For each additional account:
+For multi-account switching, the user needs additional accounts (each must be a **different** Claude organization). Two accounts can share the same email if they belong to different organizations (e.g., a personal Max plan and an enterprise org). For each additional account:
 
-**Duplicate protection:** If the user logs in with the same email as an existing account, claude-nonstop detects the duplicate after login, removes the new account, and exits with an error. You do not need to check for duplicates yourself.
+**Duplicate protection:** If the user logs in with the same organization as an existing account, claude-nonstop detects the duplicate after login, removes the new account, and exits with an error. Same-email accounts with different organizations are allowed — the user selects the target org during the browser OAuth flow. You do not need to check for duplicates yourself.
 
 **Agents can automate this step.** The `add` command uses `claude auth login` which opens the user's browser for OAuth and waits for completion — no interactive Claude session needed. You can run it directly:
 

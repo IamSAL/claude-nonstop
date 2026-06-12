@@ -153,21 +153,29 @@ async function cmdAdd(args) {
     console.log('');
     console.log(`Account "${name}" authenticated. Checking for duplicates...`);
 
-    // Duplicate detection: compare profile email against existing accounts
+    // Duplicate detection: identity is the ORGANIZATION, not the email.
+    // One email can own multiple orgs — e.g. an enterprise email that, per
+    // company policy, has both an enterprise org and a personal Max plan org —
+    // each a distinct subscription with its own quota. We key on
+    // organization.uuid; only when org info is unavailable do we fall back to
+    // email so older/edge tokens still get some duplicate protection.
     const newProfile = await fetchProfile(creds.token);
-    if (newProfile.email) {
+    const newIdentity = newProfile.orgId || newProfile.email;
+    if (newIdentity) {
       const existingAccounts = getAccounts().filter(a => a.name !== name);
       const existingProfiles = await Promise.all(existingAccounts.map(async (a) => {
         const existingCreds = readCredentials(a.configDir);
-        if (!existingCreds.token) return { ...a, email: null };
+        if (!existingCreds.token) return { ...a, identity: null, profile: null };
         const profile = await fetchProfile(existingCreds.token);
-        return { ...a, email: profile.email };
+        return { ...a, identity: profile.orgId || profile.email, profile };
       }));
 
-      const duplicate = existingProfiles.find(a => a.email && a.email === newProfile.email);
+      const duplicate = existingProfiles.find(a => a.identity && a.identity === newIdentity);
       if (duplicate) {
-        console.error(`\nError: "${name}" (${newProfile.email}) is the same account as "${duplicate.name}".`);
-        console.error('Each account must be a different Claude subscription.');
+        const label = formatOrgLabel(newProfile);
+        console.error(`\nError: "${name}" (${label}) is the same organization as "${duplicate.name}".`);
+        console.error('Each account must be a different Claude organization (org).');
+        console.error('Tip: if you meant a different org under the same email, pick that org in the browser sign-in.');
         console.error(`Removing "${name}"...`);
         removeAccount(name);
         process.exit(1);
@@ -175,7 +183,8 @@ async function cmdAdd(args) {
     }
 
     console.log(`Account "${name}" added successfully.`);
-    if (newProfile.email) console.log(`Email: ${newProfile.email}`);
+    const addedLabel = formatOrgLabel(newProfile);
+    if (addedLabel) console.log(`Identity: ${addedLabel}`);
   } catch (err) {
     console.error(`Error: ${err.message}`);
     process.exit(1);
@@ -1621,11 +1630,24 @@ Run \`setup --help\`, \`webhook\`, or \`hooks\` for subcommand details.
 `.trim());
 }
 
-function formatUserInfo({ name, email }) {
-  if (name && email) return ` (${name} — ${email})`;
-  if (name) return ` (${name})`;
-  if (email) return ` (${email})`;
-  return '';
+function formatUserInfo({ name, email, orgName, orgType } = {}) {
+  const who = name && email ? `${name} — ${email}` : (name || email || '');
+  const org = formatOrgSuffix({ orgName, orgType });
+  const inner = [who, org].filter(Boolean).join(' · ');
+  return inner ? ` (${inner})` : '';
+}
+
+/** Human-readable org suffix, e.g. "Speak [enterprise]". */
+function formatOrgSuffix({ orgName, orgType } = {}) {
+  if (!orgName) return '';
+  const t = orgType ? orgType.replace(/^claude_/, '') : '';
+  return t ? `${orgName} [${t}]` : orgName;
+}
+
+/** Full identity label for add/dedup messages, e.g. "sj@x.com · Speak [enterprise]". */
+function formatOrgLabel({ email, orgName, orgType } = {}) {
+  const org = formatOrgSuffix({ orgName, orgType });
+  return [email, org].filter(Boolean).join(' · ');
 }
 
 function makeBar(percent, width = 20) {
