@@ -291,8 +291,7 @@ async function cmdReauth() {
 }
 
 async function cmdUpdate() {
-  // Find the source git repo. The installed package (e.g. /opt/homebrew/lib/node_modules/...)
-  // is not a git repo, so we search common locations for the cloned source.
+  // Check if installed from a local git repo or from npm
   function isClaudeNonstopRepo(dir) {
     try {
       if (!existsSync(join(dir, 'package.json'))) return false;
@@ -312,43 +311,44 @@ async function cmdUpdate() {
     join(home, 'repos', 'claude-nonstop'),
   ];
 
-  let repoDir = candidates.find(isClaudeNonstopRepo);
+  const repoDir = candidates.find(isClaudeNonstopRepo);
 
-  if (!repoDir) {
-    console.error('Could not find the claude-nonstop git repo.');
-    console.error('Checked: ' + candidates.join(', '));
-    console.error('\nClone it first:');
-    console.error('  git clone https://github.com/rchaz/claude-nonstop.git ~/code/claude-nonstop');
-    process.exit(1);
-  }
+  if (repoDir) {
+    console.log(`Updating from local repo: ${repoDir}\n`);
 
-  console.log(`Updating from ${repoDir}...\n`);
+    try {
+      const remotes = execFileSync('git', ['remote'], { cwd: repoDir, encoding: 'utf8', stdio: 'pipe' }).trim();
+      if (remotes) {
+        console.log(`Tip: Run "cd ${repoDir} && git pull" first to get the latest changes.\n`);
+      }
+    } catch {}
 
-  // 1. Remind user to pull if there's a remote
-  try {
-    const remotes = execFileSync('git', ['remote'], { cwd: repoDir, encoding: 'utf8', stdio: 'pipe' }).trim();
-    if (remotes) {
-      console.log(`Tip: Run "cd ${repoDir} && git pull" first to get the latest changes.\n`);
+    console.log('Reinstalling from source...');
+    try {
+      const tgz = execFileSync('npm', ['pack'], { cwd: repoDir, encoding: 'utf8', stdio: 'pipe' }).trim();
+      const tgzPath = join(repoDir, tgz);
+      execFileSync('npm', ['install', '-g', tgzPath], { cwd: repoDir, encoding: 'utf8', stdio: 'pipe' });
+      console.log(`  Installed ${tgz}`);
+    } catch (err) {
+      console.error(`  npm install failed: ${err.message}`);
+      process.exit(1);
     }
-  } catch {}
-
-  // 2. npm pack + install
-  console.log('\nReinstalling...');
-  try {
-    const tgz = execFileSync('npm', ['pack'], { cwd: repoDir, encoding: 'utf8', stdio: 'pipe' }).trim();
-    const tgzPath = join(repoDir, tgz);
-    execFileSync('npm', ['install', '-g', tgzPath], { cwd: repoDir, encoding: 'utf8', stdio: 'pipe' });
-    console.log(`  Installed ${tgz}`);
-  } catch (err) {
-    console.error(`  npm install failed: ${err.message}`);
-    process.exit(1);
+  } else {
+    console.log('Updating from npm...\n');
+    try {
+      const output = execFileSync('npm', ['install', '-g', 'claude-nonstop@latest'], { encoding: 'utf8', stdio: 'pipe' });
+      console.log(output.trim());
+    } catch (err) {
+      console.error(`  npm install failed: ${err.message}`);
+      process.exit(1);
+    }
   }
 
-  // 3. Reinstall hooks to pick up any new/changed hook types
+  // Reinstall hooks to pick up any new/changed hook types
   console.log('\nReinstalling hooks...');
   installHooksToAllProfiles();
 
-  // 4. postinstall handles webhook restart, but verify
+  // postinstall handles webhook restart, but verify
   if (isMacOS() && isServiceInstalled()) {
     console.log('\nWebhook service restarted by postinstall.');
   }
@@ -1618,7 +1618,7 @@ Commands:
   setup                Configure Slack remote access
   webhook              Webhook service management
   hooks                Hook management
-  update               Reinstall from local source
+  update               Update to latest version
   uninstall            Remove claude-nonstop completely
 
 Options:

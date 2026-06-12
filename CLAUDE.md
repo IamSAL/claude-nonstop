@@ -236,19 +236,18 @@ tmux -V           # Any recent version
 
 ### Step 2: Install
 
-If you are already inside the claude-nonstop repo directory, skip the clone:
-
 ```bash
-# Only if not already cloned:
-cd ~/code  # or user's preferred directory
-git clone https://github.com/rchaz/claude-nonstop.git
-cd claude-nonstop
-
-npm install -g "$(npm pack)"
+npm install -g claude-nonstop
 claude-nonstop help  # Verify
 ```
 
 If `npm install -g` fails with compilation errors (gyp, node-pty), the user needs to install C/C++ build tools first. Tell them what to run for their platform and retry.
+
+If you are already inside the claude-nonstop repo directory (e.g., for development), you can install from source instead:
+
+```bash
+npm install -g "$(npm pack)"
+```
 
 ### Step 3: Add accounts
 
@@ -386,7 +385,7 @@ This should:
 
 ### What you CAN automate
 
-- Installing claude-nonstop (`git clone`, `npm install -g "$(npm pack)"`)
+- Installing claude-nonstop (`npm install -g claude-nonstop`)
 - **Adding accounts** (`claude-nonstop add <name>`) — uses `claude auth login` which opens the browser and waits. The `CLAUDECODE` env var is stripped automatically so it works from inside a Claude Code session.
 - Running `claude-nonstop setup --bot-token <tok> --app-token <tok> --invite-user-id <uid>` (after user provides tokens and user ID)
 - Running `claude-nonstop setup --from-env` (after setting env vars with user-provided tokens and user ID)
