@@ -44,7 +44,7 @@ On launch, claude-nonstop checks usage across all accounts and picks the one wit
 
 | Command | Description |
 |---------|-------------|
-| `status` | Show usage with progress bars and reset times |
+| `status` | Show usage with progress bars and reset times (Enterprise usage-based accounts show a spend bar instead) |
 | `add <name>` | Add a new Claude account (opens browser for OAuth) |
 | `remove <name>` | Remove an account |
 | `list` | List accounts with auth status |

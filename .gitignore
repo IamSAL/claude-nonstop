@@ -27,3 +27,6 @@ Thumbs.db
 build/
 prebuilds/
 *.tgz
+
+# OMC agent runtime/planning state
+.omc/

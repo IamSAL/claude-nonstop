@@ -14,7 +14,7 @@ bin/claude-nonstop.js         CLI entry point, command routing (ESM)
 lib/                          Core logic (ESM, .js)
   config.js                   Account registry, path constants, validation
   runner.js                   Process wrapper, rate limit detection, session migration
-  usage.js                    Anthropic usage API client
+  usage.js                    Anthropic usage API client (parses both window meter — 5-hour/7-day — and spend meter for Enterprise usage-based accounts; exports checkUsage, parseSpend, nextMonthlyResetUTC)
   scorer.js                   Best-account selection algorithm
   keychain.js                 OS credential store reading
   session.js                  Session file migration + cross-profile search
