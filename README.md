@@ -71,6 +71,53 @@ On launch, claude-nonstop checks usage across all accounts and picks the one wit
 
 Any unrecognized arguments are passed through to `claude` directly. Use `-a <name>` to select a specific account.
 
+## How Enterprise usage limits are tracked
+
+Subscription accounts (Pro/Max) and Enterprise usage-based accounts are metered
+differently, and claude-nonstop handles both transparently.
+
+**Two kinds of meter.** Every account is checked against the same OAuth usage
+endpoint (`GET /api/oauth/usage`), but the response shape differs:
+
+- **Window-metered** (Pro/Max): the API returns rolling `five_hour` and
+  `seven_day` utilization percentages. `status` shows these as the 5-hour / 7-day
+  bars. This is the meter you hit mid-work.
+- **Spend-metered** (Enterprise usage-based): the API returns `five_hour` and
+  `seven_day` as `null` and instead a `spend` block with `used`, `limit`, and
+  `percent` in USD (minor units / cents). `status` shows a dollar bar, e.g.
+  `spend: ████████░░ 65% ($649.13 / $1,000.00)`.
+
+An account is treated as spend-metered **only when both rolling windows are
+null**. Enterprise's plan is purely dollar-based; Pro/Max accounts also carry a
+`spend` block (their extra-usage overage cap), but their real meter is the
+rolling window, so they stay window-metered and their live session/weekly usage
+is never hidden behind the overage number.
+
+**The cap is always read live.** The spend limit is taken from the API's
+`spend.limit` on every check — there is no cached or hardcoded cap — so if your
+org's limit changes, claude-nonstop picks it up on the next `status` or account
+selection. The percentage is computed locally from `used / limit` rather than
+trusting the API's reported `percent`, which has been observed to briefly lag
+during high-traffic periods.
+
+**Kept up to date automatically.** Usage is re-fetched fresh on every `status`
+call and every account selection (launch, switch, `use --best`), and the
+preemption watcher re-polls every 5 minutes while running. There is no
+separate polling daemon — freshness comes from fetching on demand. An Enterprise
+account that is over its monthly cap (`spend.percent` ≥ 100%) folds into the same
+effective-utilization logic as a rate-limited subscription account, so the scorer
+stops routing to it and resumes after the monthly reset.
+
+**Monthly reset.** Enterprise spend caps reset at **00:00 UTC on the 1st of each
+calendar month** — a fixed, universal rule confirmed against Anthropic's official
+Spend Limits API documentation (the same for every org, independent of the
+subscription start date). The API does not expose the reset datetime, so
+claude-nonstop computes it locally and displays it in US Pacific time, labeled
+`(computed)` — e.g. `Resets: Jun 30, 5:00 PM PDT (computed)`. Note this is the
+*spend* reset specifically; it is distinct from the rolling 5-hour/7-day rate
+limits (which reset on their own rolling windows) and from Enterprise seat-fee
+billing (charged on the contract anniversary, not the 1st).
+
 ## Install
 
 The easiest way to install is to ask Claude Code:
