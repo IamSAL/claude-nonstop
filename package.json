@@ -1,10 +1,10 @@
 {
   "name": "claude-nonstop",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "description": "Automatic Claude Code account switching on rate limits + Slack remote access",
   "type": "module",
   "bin": {
-    "claude-nonstop": "./bin/claude-nonstop.js"
+    "claude-nonstop": "bin/claude-nonstop.js"
   },
   "scripts": {
     "check": "node --check lib/*.js && node --check remote/*.cjs && node --check bin/claude-nonstop.js && node --check scripts/postinstall.js",
@@ -49,8 +49,8 @@
     "anthropic"
   ],
   "dependencies": {
-    "@slack/bolt": "^4.3.0",
-    "@slack/web-api": "^7.9.1",
-    "node-pty": "^1.2.0-beta.11"
+    "@slack/bolt": "^4.7.3",
+    "@slack/web-api": "^7.16.0",
+    "node-pty": "^1.2.0-beta.13"
   }
 }

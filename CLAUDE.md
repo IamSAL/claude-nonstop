@@ -255,27 +255,26 @@ tmux -V           # Any recent version
 
 ### Step 2: Install
 
-If you are already inside the claude-nonstop repo directory, skip the clone:
-
 ```bash
-# Only if not already cloned:
-cd ~/code  # or user's preferred directory
-git clone https://github.com/rchaz/claude-nonstop.git
-cd claude-nonstop
-
-npm install -g "$(npm pack)"
+npm install -g claude-nonstop
 claude-nonstop help  # Verify
 ```
 
 If `npm install -g` fails with compilation errors (gyp, node-pty), the user needs to install C/C++ build tools first. Tell them what to run for their platform and retry.
 
+If you are already inside the claude-nonstop repo directory (e.g., for development), you can install from source instead:
+
+```bash
+npm install -g "$(npm pack)"
+```
+
 ### Step 3: Add accounts
 
 **The default account is automatic.** If the user already has Claude Code set up (`~/.claude` exists), it is auto-registered as "default" on first run. Verify with `claude-nonstop list`. Do not try to `add default` — it is handled automatically.
 
-For multi-account switching, the user needs additional accounts (each must be a **different** Claude subscription with a different email). For each additional account:
+For multi-account switching, the user needs additional accounts (each must be a **different** Claude organization). Two accounts can share the same email if they belong to different organizations (e.g., a personal Max plan and an enterprise org). For each additional account:
 
-**Duplicate protection:** If the user logs in with the same email as an existing account, claude-nonstop detects the duplicate after login, removes the new account, and exits with an error. You do not need to check for duplicates yourself.
+**Duplicate protection:** If the user logs in with the same organization as an existing account, claude-nonstop detects the duplicate after login, removes the new account, and exits with an error. Same-email accounts with different organizations are allowed — the user selects the target org during the browser OAuth flow. You do not need to check for duplicates yourself.
 
 **Agents can automate this step.** The `add` command uses `claude auth login` which opens the user's browser for OAuth and waits for completion — no interactive Claude session needed. You can run it directly:
 
@@ -405,7 +404,7 @@ This should:
 
 ### What you CAN automate
 
-- Installing claude-nonstop (`git clone`, `npm install -g "$(npm pack)"`)
+- Installing claude-nonstop (`npm install -g claude-nonstop`)
 - **Adding accounts** (`claude-nonstop add <name>`) — uses `claude auth login` which opens the browser and waits. The `CLAUDECODE` env var is stripped automatically so it works from inside a Claude Code session.
 - Running `claude-nonstop setup --bot-token <tok> --app-token <tok> --invite-user-id <uid>` (after user provides tokens and user ID)
 - Running `claude-nonstop setup --from-env` (after setting env vars with user-provided tokens and user ID)

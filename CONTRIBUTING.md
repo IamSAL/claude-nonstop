@@ -26,8 +26,11 @@ Open an issue describing the use case and proposed solution. For larger changes,
 ```bash
 git clone https://github.com/rchaz/claude-nonstop.git
 cd claude-nonstop
-npm install -g "$(npm pack)"
+npm install              # install dependencies locally
+npm install -g "$(npm pack)"  # install CLI globally from source
 ```
+
+End users can install directly from npm: `npm install -g claude-nonstop`
 
 ### Prerequisites
 

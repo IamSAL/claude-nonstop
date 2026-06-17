@@ -1,5 +1,6 @@
 # claude-nonstop
 
+[![npm](https://img.shields.io/npm/v/claude-nonstop)](https://www.npmjs.com/package/claude-nonstop)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 [![Node.js](https://img.shields.io/badge/Node.js-22%2B-green.svg)](https://nodejs.org/)
 
@@ -66,7 +67,7 @@ On launch, claude-nonstop checks usage across all accounts and picks the one wit
 
 | Command | Description |
 |---------|-------------|
-| `update` | Reinstall from local source |
+| `update` | Update to latest version |
 | `uninstall` | Remove claude-nonstop completely |
 
 Any unrecognized arguments are passed through to `claude` directly. Use `-a <name>` to select a specific account.
@@ -133,26 +134,34 @@ Claude Code will follow the [setup instructions in CLAUDE.md](CLAUDE.md#setting-
 **Prerequisites:** Node.js 22+ ([download](https://nodejs.org/)), C/C++ build tools (`xcode-select --install` on macOS), Claude Code CLI ([install](https://docs.anthropic.com/en/docs/claude-code/overview)), and tmux for remote access.
 
 ```bash
-git clone https://github.com/rchaz/claude-nonstop.git
-cd claude-nonstop
-npm install -g "$(npm pack)"
+npm install -g claude-nonstop
 claude-nonstop help
 ```
 
 If `npm install -g` fails with compilation errors, you're missing C/C++ build tools.
 
+<details>
+<summary>Install from source (for development)</summary>
+
+```bash
+git clone https://github.com/rchaz/claude-nonstop.git
+cd claude-nonstop
+npm install -g "$(npm pack)"
+```
+</details>
+
 ## Multi-Account Setup
 
 Your existing `~/.claude` account is auto-detected as "default". Verify with `claude-nonstop list`.
 
-Add additional accounts (each must be a different Claude subscription). Names can contain letters, numbers, hyphens, and underscores:
+Add additional accounts (each must be a different Claude organization). Two accounts can share the same email if they belong to different orgs. Names can contain letters, numbers, hyphens, and underscores:
 
 ```bash
 claude-nonstop add work
 claude-nonstop add personal
 ```
 
-Each `add` opens your browser for OAuth. After login, claude-nonstop checks for duplicate accounts (same email) and removes them automatically.
+Each `add` opens your browser for OAuth. After login, claude-nonstop checks for duplicate accounts (same organization) and removes them automatically.
 
 Verify all accounts are working:
 
