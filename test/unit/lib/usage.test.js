@@ -1,6 +1,6 @@
 import { describe, it, beforeEach, afterEach } from 'node:test';
 import assert from 'node:assert/strict';
-import { normalizePercent, checkUsage, fetchProfile, checkAllUsage } from '../../../lib/usage.js';
+import { normalizePercent, checkUsage, fetchProfile, checkAllUsage, nextMonthlyResetUTC } from '../../../lib/usage.js';
 
 describe('normalizePercent', () => {
   it('converts 0.5 fraction to 50%', () => {
@@ -120,6 +120,232 @@ describe('checkUsage', () => {
 
     const result = await checkUsage('sk-ant-oat01-test');
     assert.equal(result.error, 'Network failure');
+  });
+
+  it('defaults window accounts to meterType "window" with null spend fields', async () => {
+    globalThis.fetch = async () => ({
+      ok: true,
+      json: async () => ({
+        five_hour: { utilization: 0.42 },
+        seven_day: { utilization: 0.75 },
+      }),
+    });
+    const r = await checkUsage('sk-ant-oat01-test');
+    assert.equal(r.meterType, 'window');
+    assert.equal(r.spendPercent, 0);
+    assert.equal(r.spendLimitMinor, null);
+    assert.equal(r.spendUsedMinor, null);
+    assert.equal(r.spendResetsAt, null);
+  });
+});
+
+describe('checkUsage — spend-metered (Enterprise) accounts', () => {
+  let originalFetch;
+  beforeEach(() => { originalFetch = globalThis.fetch; });
+  afterEach(() => { globalThis.fetch = originalFetch; });
+
+  // Real Enterprise payload shape observed on the live Speak org.
+  const enterprisePayload = (overrides = {}) => ({
+    five_hour: null,
+    seven_day: null,
+    extra_usage: {
+      is_enabled: true,
+      monthly_limit: 100000,
+      used_credits: 64913.0,
+      utilization: 64.913,
+      currency: 'USD',
+      decimal_places: 2,
+      ...(overrides.extra_usage || {}),
+    },
+    spend: overrides.spend === null ? undefined : {
+      used: { amount_minor: 64913, currency: 'USD', exponent: 2 },
+      limit: { amount_minor: 100000, currency: 'USD', exponent: 2 },
+      percent: 65,
+      severity: 'normal',
+      enabled: true,
+      disabled_reason: null,
+      ...(overrides.spend || {}),
+    },
+  });
+
+  const stub = (payload) => { globalThis.fetch = async () => ({ ok: true, json: async () => payload }); };
+
+  it('parses the spend block into normalized dollar fields', async () => {
+    stub(enterprisePayload());
+    const r = await checkUsage('sk-ant-oat01-ent');
+    assert.equal(r.meterType, 'spend');
+    assert.equal(r.spendUsedMinor, 64913);
+    assert.equal(r.spendLimitMinor, 100000);
+    assert.equal(r.spendCurrency, 'USD');
+    assert.equal(r.spendExponent, 2);
+    // computed from used/limit: 64913/100000 = 64.913 -> 65
+    assert.equal(r.spendPercent, 65);
+    // window fields stay zero for a spend account
+    assert.equal(r.sessionPercent, 0);
+    assert.equal(r.weeklyPercent, 0);
+    assert.equal(r.error, null);
+  });
+
+  it('emits a computed monthly spendResetsAt (next 1st of month, 00:00 UTC)', async () => {
+    stub(enterprisePayload());
+    const r = await checkUsage('sk-ant-oat01-ent');
+    assert.ok(r.spendResetsAt, 'spendResetsAt should be set');
+    const d = new Date(r.spendResetsAt);
+    assert.equal(d.getUTCDate(), 1);
+    assert.equal(d.getUTCHours(), 0);
+    assert.equal(d.getUTCMinutes(), 0);
+    assert.ok(d.getTime() > Date.now(), 'reset is in the future');
+  });
+
+  it('prefers COMPUTED percent over a stale reported spend.percent', async () => {
+    // Simulate the transient stale reading we actually observed: percent=100 but used/limit say 65%.
+    stub(enterprisePayload({ spend: { percent: 100, severity: 'critical' } }));
+    const r = await checkUsage('sk-ant-oat01-ent');
+    assert.equal(r.spendPercent, 65); // trusts used/limit, not the stale percent
+  });
+
+  it('falls back to extra_usage when the spend block has no used/limit amounts', async () => {
+    // A spend block with null used+limit carries no dollar signal, so the
+    // older extra_usage block (still populated) is used instead.
+    stub(enterprisePayload({ spend: { used: null, limit: null, percent: 42 } }));
+    const r = await checkUsage('sk-ant-oat01-ent');
+    assert.equal(r.meterType, 'spend');
+    assert.equal(r.spendUsedMinor, 64913);   // from extra_usage.used_credits
+    assert.equal(r.spendLimitMinor, 100000); // from extra_usage.monthly_limit
+    assert.equal(r.spendPercent, 65);
+  });
+
+  it('uses reported percent when limit is present but used amount is missing', async () => {
+    // spend block has a limit (so it is the authoritative source) but no used
+    // amount; we cannot compute a ratio, so we trust the reported percent.
+    stub(enterprisePayload({
+      spend: {
+        used: null,
+        limit: { amount_minor: 100000, currency: 'USD', exponent: 2 },
+        percent: 42,
+      },
+    }));
+    const r = await checkUsage('sk-ant-oat01-ent');
+    assert.equal(r.spendLimitMinor, 100000);
+    assert.equal(r.spendUsedMinor, null);
+    assert.equal(r.spendPercent, 42);
+  });
+
+  it('treats null limit as UNLIMITED (percent 0, never exhausted)', async () => {
+    stub(enterprisePayload({ spend: { limit: null } }));
+    const r = await checkUsage('sk-ant-oat01-ent');
+    assert.equal(r.meterType, 'spend');
+    assert.equal(r.spendLimitMinor, null);
+    assert.equal(r.spendPercent, 0);
+  });
+
+  it('treats zero limit as included-only (percent 0, not over budget)', async () => {
+    stub(enterprisePayload({ spend: { limit: { amount_minor: 0, currency: 'USD', exponent: 2 } } }));
+    const r = await checkUsage('sk-ant-oat01-ent');
+    assert.equal(r.spendLimitMinor, 0);
+    assert.equal(r.spendPercent, 0);
+  });
+
+  it('clamps spendPercent to 100 when used exceeds limit', async () => {
+    stub(enterprisePayload({
+      spend: {
+        used: { amount_minor: 150000, currency: 'USD', exponent: 2 },
+        limit: { amount_minor: 100000, currency: 'USD', exponent: 2 },
+        percent: 100,
+      },
+    }));
+    const r = await checkUsage('sk-ant-oat01-ent');
+    assert.equal(r.spendPercent, 100);
+    assert.equal(r.spendUsedMinor, 150000);
+  });
+
+  it('carries a non-USD currency and non-2 exponent through', async () => {
+    stub(enterprisePayload({
+      spend: {
+        used: { amount_minor: 5000, currency: 'JPY', exponent: 0 },
+        limit: { amount_minor: 20000, currency: 'JPY', exponent: 0 },
+        percent: 25,
+      },
+    }));
+    const r = await checkUsage('sk-ant-oat01-ent');
+    assert.equal(r.spendCurrency, 'JPY');
+    assert.equal(r.spendExponent, 0);
+    assert.equal(r.spendPercent, 25);
+  });
+
+  it('falls back to extra_usage block when spend block is absent', async () => {
+    stub(enterprisePayload({ spend: null }));
+    const r = await checkUsage('sk-ant-oat01-ent');
+    assert.equal(r.meterType, 'spend');
+    assert.equal(r.spendUsedMinor, 64913);   // from used_credits
+    assert.equal(r.spendLimitMinor, 100000); // from monthly_limit
+    assert.equal(r.spendPercent, 65);
+  });
+
+  it('stays window-metered when extra_usage is disabled and no spend block', async () => {
+    stub({
+      five_hour: { utilization: 0.1 },
+      seven_day: { utilization: 0.2 },
+      extra_usage: { is_enabled: false, monthly_limit: null, used_credits: 0 },
+    });
+    const r = await checkUsage('sk-ant-oat01-test');
+    assert.equal(r.meterType, 'window');
+    assert.equal(r.spendPercent, 0);
+  });
+
+  it('Max/Pro accounts keep WINDOW metering even though they carry a spend (overage) block', async () => {
+    // Real Max payload: live rolling-window usage AND an extra-usage overage cap.
+    // The window is the governing meter; the spend block is just the overage
+    // ceiling and must not hide the real session/weekly usage.
+    stub({
+      five_hour: { utilization: 14, resets_at: '2026-06-17T02:30:00Z' },
+      seven_day: { utilization: 5, resets_at: '2026-06-23T19:00:00Z' },
+      spend: { used: { amount_minor: 0, currency: 'USD', exponent: 2 },
+               limit: { amount_minor: 2000, currency: 'USD', exponent: 2 },
+               percent: 0, severity: 'normal', enabled: true },
+      extra_usage: { is_enabled: true, monthly_limit: 2000, used_credits: 0, currency: 'USD', decimal_places: 2 },
+    });
+    const r = await checkUsage('sk-ant-oat01-max');
+    assert.equal(r.meterType, 'window');     // NOT spend
+    assert.equal(r.sessionPercent, 14);       // real window usage preserved
+    assert.equal(r.weeklyPercent, 5);
+    assert.equal(r.spendPercent, 0);
+    assert.equal(r.spendLimitMinor, null);    // spend fields stay neutral for window accounts
+  });
+
+  it('Enterprise stays spend-metered when both windows are explicitly null', async () => {
+    stub(enterprisePayload());
+    const r = await checkUsage('sk-ant-oat01-ent');
+    assert.equal(r.meterType, 'spend');
+    assert.equal(r.spendPercent, 65);
+  });
+});
+
+describe('nextMonthlyResetUTC', () => {
+  it('returns the 1st of next month at 00:00:00 UTC (mid-month)', () => {
+    const reset = nextMonthlyResetUTC(new Date('2026-06-16T17:00:00Z'));
+    assert.equal(reset.toISOString(), '2026-07-01T00:00:00.000Z');
+  });
+
+  it('handles the last day of the month', () => {
+    const reset = nextMonthlyResetUTC(new Date('2026-06-30T23:59:59Z'));
+    assert.equal(reset.toISOString(), '2026-07-01T00:00:00.000Z');
+  });
+
+  it('rolls the year over December -> January', () => {
+    const reset = nextMonthlyResetUTC(new Date('2026-12-15T10:00:00Z'));
+    assert.equal(reset.toISOString(), '2027-01-01T00:00:00.000Z');
+  });
+
+  it('handles leap-year February correctly', () => {
+    const reset = nextMonthlyResetUTC(new Date('2028-02-15T00:00:00Z'));
+    assert.equal(reset.toISOString(), '2028-03-01T00:00:00.000Z');
+  });
+
+  it('handles an instant exactly at a month boundary (00:00 on the 1st)', () => {
+    // At 00:00 on the 1st, the next reset is the 1st of the FOLLOWING month.
+    const reset = nextMonthlyResetUTC(new Date('2026-06-01T00:00:00Z'));
+    assert.equal(reset.toISOString(), '2026-07-01T00:00:00.000Z');
   });
 });
 

@@ -449,6 +449,8 @@ async function cmdStatus() {
 
       if (account.usage.error) {
         console.log(`    Usage: error (${account.usage.error})`);
+      } else if (account.usage.meterType === 'spend') {
+        renderSpendUsage(account.usage);
       } else {
         const sessionBar = makeBar(account.usage.sessionPercent);
         const weeklyBar = makeBar(account.usage.weeklyPercent);
@@ -1675,5 +1677,70 @@ function formatResetTime(isoString) {
     return `in ${minutes}m`;
   } catch {
     return isoString;
+  }
+}
+
+/**
+ * Render an absolute reset datetime in US Pacific time. The monthly spend reset
+ * is a fixed UTC instant (00:00 on the 1st), which the claude.ai UI shows in
+ * Pacific — 5:00 PM PDT in summer, 4:00 PM PST in winter. Using a real IANA
+ * zone (not a fixed offset) keeps the DST abbreviation correct year-round.
+ * e.g. "Jun 30, 5:00 PM PDT".
+ */
+function formatAbsoluteReset(isoString) {
+  try {
+    const date = new Date(isoString);
+    if (isNaN(date.getTime())) return isoString;
+    return new Intl.DateTimeFormat('en-US', {
+      timeZone: 'America/Los_Angeles',
+      month: 'short', day: 'numeric',
+      hour: 'numeric', minute: '2-digit',
+      timeZoneName: 'short',
+    }).format(date);
+  } catch {
+    return isoString;
+  }
+}
+
+/**
+ * Format a minor-unit amount (e.g. cents) as a currency string using the
+ * payload's own exponent, so non-USD / non-2-decimal currencies render right.
+ * e.g. (64913, 'USD', 2) -> "$649.13"; (5000, 'JPY', 0) -> "¥5000".
+ */
+function formatSpendAmount(amountMinor, currency = 'USD', exponent = 2) {
+  if (typeof amountMinor !== 'number') return '—';
+  const exp = typeof exponent === 'number' ? exponent : 2;
+  const major = amountMinor / Math.pow(10, exp);
+  try {
+    return new Intl.NumberFormat('en-US', {
+      style: 'currency',
+      currency: currency || 'USD',
+      minimumFractionDigits: exp,
+      maximumFractionDigits: exp,
+    }).format(major);
+  } catch {
+    // Unknown currency code — fall back to a plain number with the code.
+    return `${major.toFixed(exp)} ${currency || ''}`.trim();
+  }
+}
+
+/**
+ * Render usage for a spend-metered (Enterprise usage-based) account: a dollar
+ * bar of spend-against-cap plus the locally-computed monthly reset. A null
+ * limit means the org has no spend cap (unlimited).
+ */
+function renderSpendUsage(usage) {
+  const { spendUsedMinor, spendLimitMinor, spendCurrency, spendExponent, spendPercent, spendResetsAt } = usage;
+  const used = formatSpendAmount(spendUsedMinor, spendCurrency, spendExponent);
+
+  if (spendLimitMinor == null) {
+    console.log(`    spend:   unlimited (${used} used)`);
+    return;
+  }
+
+  const limit = formatSpendAmount(spendLimitMinor, spendCurrency, spendExponent);
+  console.log(`    spend:   ${makeBar(spendPercent)} ${spendPercent}%  (${used} / ${limit})`);
+  if (spendResetsAt) {
+    console.log(`    Resets:  ${formatAbsoluteReset(spendResetsAt)} (computed)`);
   }
 }

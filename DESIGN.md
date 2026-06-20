@@ -171,9 +171,9 @@ Messages are sent as keystrokes to the tmux pane rather than using Claude Code's
 
 Hook scripts (`remote/*.cjs`) use CommonJS because Claude Code spawns them as standalone Node.js processes. The main CLI (`lib/*.js`) uses ESM. **Trade-off:** Two module systems coexist, with shared constants duplicated in `remote/paths.cjs` and `lib/config.js`.
 
-### 6. Effective Utilization = max(session%, weekly%)
+### 6. Effective Utilization = max(session%, weekly%) or spendPercent
 
-The scorer picks the account with the lowest "effective utilization" — the higher of the 5-hour session percentage or the 7-day weekly percentage. **Trade-off:** A weighted average was considered but would allow an account at 98% session / 5% weekly to be selected.
+The scorer picks the account with the lowest "effective utilization". For standard (window-metered) accounts this is the higher of the 5-hour session percentage or the 7-day weekly percentage. For Enterprise usage-based accounts the `/api/oauth/usage` endpoint returns `five_hour`/`seven_day` as `null` and a `spend` block instead; `usage.js` parses this into a `spendPercent` (spend used / spend limit) with a locally-computed monthly reset (00:00 UTC on the 1st), and the scorer uses `spendPercent` as the effective utilization for those accounts. **Trade-off:** A weighted average was considered but would allow an account at 98% session / 5% weekly to be selected.
 
 ### 7. Session Migration by File Copy
 
