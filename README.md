@@ -244,6 +244,76 @@ This creates a tmux session named after the current directory, enables `--danger
 - Webhook not receiving? Run `claude-nonstop webhook status` then `webhook logs`
 - Messages not reaching Claude? Check `tmux ls` and that Claude is waiting for input
 
+## Custom Endpoint Failover
+
+Custom Anthropic-API-compatible endpoints (proxies, Bedrock adapters, etc.) can be added as **peers** in the account pool. When all OAuth accounts exceed their usage threshold, the failover monitor switches to the first healthy custom peer.
+
+### Configuration (`~/.claude-nonstop/failover.json`)
+
+```jsonc
+{
+  "peers": [
+    {
+      "name": "manifest-proxy",           // Unique name for logging/state
+      "kind": "custom_endpoint",          // Required
+      "baseUrl": "https://proxy.example.com",
+      "authToken": "sk-ant-...",          // Literal token (for quick testing)
+      // OR: "authTokenEnv": "MY_TOKEN",  // Read from environment variable
+      // OR: "authTokenFile": "/run/secrets/token",  // Read from file (Docker/systemd-creds)
+      "model": "auto",                   // Optional (default: "auto")
+      "thresholds": {                     // Optional per-account overrides
+        "switch_at": 70,                  // Switch TO this peer when best OAuth ≥ 70%
+        "switch_back_at": 40              // Switch BACK to OAuth when best OAuth ≤ 40%
+      }
+    },
+    {
+      "name": "bedrock",
+      "kind": "custom_endpoint",
+      "baseUrl": "https://bedrock-proxy.example.com",
+      "authTokenEnv": "BEDROCK_AUTH_TOKEN",
+      "model": "claude-sonnet-4-5-20250514",
+      "thresholds": { "switch_at": 90, "switch_back_at": 60 }
+    }
+  ],
+  "thresholds": {                         // Global defaults
+    "switch_at": 80,
+    "switch_back_at": 50,
+    "recheck_interval_seconds": 60
+  }
+}
+```
+
+See [`failover.example.json`](failover.example.json) for a complete example including the legacy single `fallback` entry.
+
+### Per-Account Thresholds
+
+Both OAuth accounts and custom peers can have independent thresholds:
+
+```bash
+# Set thresholds for an OAuth account
+claude-nonstop set-threshold main 60 30   # switch_at=60, switch_back_at=30
+```
+
+Peers define thresholds directly in `failover.json` (see above). When a peer has `switch_at: 70`, the monitor switches to it as soon as the best OAuth account hits 70% — even if the global threshold is 80%.
+
+### Non-TTY Auto-Promote
+
+In non-interactive contexts (piped stdin, e.g. paperclip runs), the runner automatically promotes to the first healthy custom peer to avoid OAuth login prompts. No wrapper script needed — this is built into the runner.
+
+### Failover Monitor
+
+The background monitor polls OAuth usage and custom endpoint health:
+
+```bash
+claude-nonstop failover start     # Start background monitor (writes ~/.claude-nonstop/state/active.json)
+claude-nonstop failover stop      # Stop monitor
+claude-nonstop failover status    # Show current state
+claude-nonstop failover check     # One-shot check (writes state)
+claude-nonstop failover dry-run   # Preview decision without writing state
+```
+
+Use `claude-failover.service` (systemd) for automatic restart on Linux.
+
 ## How It Works
 
 **Multi-account switching** queries the Anthropic usage API for all accounts (~200ms), picks the one with the most headroom, then monitors Claude's output for rate limit messages in real-time. On detection: kill, migrate session files to the next account, resume with `claude --resume`.
@@ -268,6 +338,13 @@ claude-nonstop/
 │   ├── tmux.js                   tmux session management
 │   ├── reauth.js                 Re-authentication flow
 │   └── platform.js               OS detection
+│   └── failover/                 Custom endpoint failover layer
+│       ├── provider.js           OAuthProvider + CustomEndpointProvider
+│       ├── pool.js               Unified OAuth + custom endpoint pool
+│       ├── monitor.js            Failover state machine + background poller
+│       ├── active.js             Runtime provider resolution + non-TTY auto-promote
+│       ├── cli.js                `failover` subcommand (start/stop/check/dry-run)
+│       └── cli_helpers.js        Shared helpers (token resolution)
 ├── remote/                       Slack remote access subsystem (CJS)
 │   ├── hook-notify.cjs           Hook entry point
 │   ├── channel-manager.cjs       Slack channel lifecycle

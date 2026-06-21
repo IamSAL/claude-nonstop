@@ -1,0 +1,53 @@
+{
+  "_comment": "Example failover.json showing custom endpoint peers with per-account thresholds.",
+  "primary": {
+    "kind": "oauth",
+    "account": "rahima"
+  },
+  "fallback": {
+    "_comment": "Legacy single-fallback entry (auto-promoted to a peer named '_fallback'). Keep for backward compat or use 'peers' array instead.",
+    "kind": "custom_endpoint",
+    "baseUrl": "http://localhost:2099",
+    "authTokenEnv": "ANTHROPIC_AUTH_TOKEN",
+    "model": "auto"
+  },
+  "peers": [
+    {
+      "name": "manifest-proxy",
+      "kind": "custom_endpoint",
+      "baseUrl": "https://my-anthropic-proxy.example.com",
+      "authToken": "sk-ant-...",
+      "model": "auto",
+      "thresholds": {
+        "switch_at": 70,
+        "switch_back_at": 40
+      }
+    },
+    {
+      "name": "bedrock",
+      "kind": "custom_endpoint",
+      "baseUrl": "https://bedrock-proxy.example.com",
+      "authTokenEnv": "BEDROCK_AUTH_TOKEN",
+      "model": "claude-sonnet-4-5-20250514",
+      "thresholds": {
+        "switch_at": 90,
+        "switch_back_at": 60
+      }
+    },
+    {
+      "name": "docker-secret",
+      "kind": "custom_endpoint",
+      "baseUrl": "https://internal-proxy.example.com",
+      "authTokenFile": "/run/secrets/anthropic_token",
+      "model": "auto"
+    }
+  ],
+  "thresholds": {
+    "switch_at": 80,
+    "switch_back_at": 50,
+    "recheck_interval_seconds": 60
+  },
+  "logging": {
+    "path": "/root/.claude-nonstop/logs/failover.log"
+  }
+}

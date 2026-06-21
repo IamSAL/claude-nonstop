@@ -13,9 +13,14 @@ import {
   getAccounts,
   setAccountPriority,
   clearAccountPriority,
-  DEFAULT_CLAUDE_DIR,
-  CONFIG_DIR,
+  DEFAULT_CLAUDE_DIR as DEFAULT_CLAUDE_DIR_FN,
+  CONFIG_DIR as CONFIG_DIR_FN,
 } from '../../../lib/config.js';
+
+// CONFIG_DIR and DEFAULT_CLAUDE_DIR changed from constants to functions in
+// v0.4.1 for test-isolation support. Coerce them to strings for existing tests.
+const CONFIG_DIR = typeof CONFIG_DIR_FN === 'function' ? CONFIG_DIR_FN() : CONFIG_DIR_FN;
+const DEFAULT_CLAUDE_DIR = typeof DEFAULT_CLAUDE_DIR_FN === 'function' ? DEFAULT_CLAUDE_DIR_FN() : DEFAULT_CLAUDE_DIR_FN;
 
 describe('validateAccountName', () => {
   it('accepts valid names', () => {
