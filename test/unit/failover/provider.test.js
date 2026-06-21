@@ -138,4 +138,20 @@ describe('failover/provider.js — CustomEndpointProvider', () => {
     const ok = await p.isHealthy();
     assert.equal(ok, false);
   });
+
+  it('getPublicConnectionInfo strips the token (AGE-71)', () => {
+    const p = new CustomEndpointProvider({
+      name: 'p',
+      baseUrl: 'https://p.example.com',
+      token: 'secret-token-do-not-leak',
+      model: 'claude-sonnet-4-5',
+    });
+    const pub = p.getPublicConnectionInfo();
+    assert.equal(pub.baseUrl, 'https://p.example.com');
+    assert.equal(pub.model, 'claude-sonnet-4-5');
+    assert.equal(pub.peer, 'p');
+    assert.ok(!('token' in pub), 'public form must not carry a token key');
+    const raw = JSON.stringify(pub);
+    assert.ok(!raw.includes('secret-token'), 'public form must not contain token bytes');
+  });
 });

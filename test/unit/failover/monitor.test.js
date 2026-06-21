@@ -152,6 +152,44 @@ describe('failover/monitor.js — decide (peer → primary)', () => {
     assert.ok(r);
     assert.equal(r.target, 'primary');
   });
+
+  it('honors per-peer switch_back_at when bestPeer is null on switch-back (AGE-69)', () => {
+    // Regression for AGE-69: getBestProviderOrNull sets bestPeer=null when any
+    // OAuth account is below threshold (the switch-back case). The override must
+    // still be readable via the peersByName lookup the monitor passes in.
+    const peersByName = new Map([
+      ['p1', peer('p1', { thresholds: { switch_back_at: 20 } })],
+    ]);
+    const r = decide(
+      'custom:p1',
+      {
+        best: oauthReading('a', 30),
+        bestPeer: null, // OAuth recovered → pool result has no peer
+        all: [{ name: 'oauth:a', percent: 30 }],
+      },
+      THRESHOLDS,
+      { peersByName },
+    );
+    assert.equal(r, null, '30 > 20 → stay on peer despite OAuth recovered');
+  });
+
+  it('falls back to global switch_back_at when peer has no override', () => {
+    const peersByName = new Map([
+      ['p1', peer('p1')], // no thresholds override
+    ]);
+    const r = decide(
+      'custom:p1',
+      {
+        best: oauthReading('a', 40),
+        bestPeer: null,
+        all: [{ name: 'oauth:a', percent: 40 }],
+      },
+      THRESHOLDS, // global switch_back_at = 50
+      { peersByName },
+    );
+    assert.ok(r);
+    assert.equal(r.target, 'primary');
+  });
 });
 
 describe('failover/monitor.js — decide (no OAuth accounts)', () => {

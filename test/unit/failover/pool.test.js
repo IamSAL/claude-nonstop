@@ -191,4 +191,39 @@ describe('failover/pool.js — getBestProviderOrNull', () => {
     // bestPeer is evaluated only when best is null
     // shape check is sufficient for this integration-level test
   });
+
+  it('probes peer health in `all` summary and reports unhealthy (AGE-72)', async () => {
+    globalThis.fetch = async (url) => {
+      // First call is OAuth usage (we don't care about that for this test).
+      // Subsequent calls target /v1/models — make the second peer unreachable.
+      const u = String(url);
+      if (u.includes('/v1/models') && u.includes('p1.example.com')) {
+        return new Response('', { status: 502 });
+      }
+      if (u.includes('/v1/models') && u.includes('p2.example.com')) {
+        return new Response('{}', { status: 200 });
+      }
+      // OAuth usage endpoints return zero util to keep the OAuth path quiet.
+      return new Response('{"five_hour":{"utilization":0}}', { status: 200 });
+    };
+
+    const r = await getBestProviderOrNull(
+      { switch_at: 80, switch_back_at: 50 },
+      {
+        peers: [
+          { name: 'p1', baseUrl: 'https://p1.example.com', authToken: 'tok-1' },
+          { name: 'p2', baseUrl: 'https://p2.example.com', authToken: 'tok-2' },
+        ],
+      },
+    );
+
+    const p1Summary = r.all.find((a) => a.name === 'custom:p1');
+    const p2Summary = r.all.find((a) => a.name === 'custom:p2');
+    assert.ok(p1Summary, 'p1 must appear in summary');
+    assert.ok(p2Summary, 'p2 must appear in summary');
+    assert.equal(p1Summary.healthy, false, 'p1 must be flagged unhealthy');
+    assert.equal(p1Summary.error, 'unhealthy');
+    assert.equal(p2Summary.healthy, true);
+    assert.equal(p2Summary.error, null);
+  });
 });

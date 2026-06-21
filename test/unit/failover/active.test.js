@@ -79,7 +79,8 @@ describe('failover/active.js — resolveProvider (non-TTY auto-promote)', () => 
     writeFileSync(join(cfgDir, 'state', 'active.json'), JSON.stringify({
       provider: 'custom:p2',
       account: null,
-      connection: { baseUrl: 'https://p2.example.com', token: 'tok-p2', model: 'auto' },
+      // Token-free public projection — AGE-71 writes the public form to disk.
+      connection: { baseUrl: 'https://p2.example.com', model: 'auto', peer: 'p2' },
       reason: 'monitor_decision',
       at: new Date().toISOString(),
     }));
@@ -88,6 +89,7 @@ describe('failover/active.js — resolveProvider (non-TTY auto-promote)', () => 
     const r = await resolveProvider({ isInteractive: false });
     assert.equal(r.autoPromoted, false);
     assert.equal(r.provider, 'custom:p2');
+    // Token is hydrated at spawn time from failover.json — must NOT live on disk.
     assert.equal(r.connection.token, 'tok-p2');
   });
 
