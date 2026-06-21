@@ -774,7 +774,7 @@ async function cmdUse(useArgs) {
       const label = match ? match.name : 'unknown';
       console.error(`Current: ${label} (${current})`);
     } else {
-      console.error(`Current: default (${DEFAULT_CLAUDE_DIR})`);
+      console.error(`Current: default (${DEFAULT_CLAUDE_DIR()})`);
     }
     return;
   }
@@ -783,7 +783,7 @@ async function cmdUse(useArgs) {
   if (flag === '--unset') {
     // stdout: eval-friendly command; stderr: human message
     console.log('unset CLAUDE_CONFIG_DIR');
-    console.error(`Reverted to default account (${DEFAULT_CLAUDE_DIR})`);
+    console.error(`Reverted to default account (${DEFAULT_CLAUDE_DIR()})`);
     return;
   }
 
@@ -1031,7 +1031,7 @@ SLACK_CHANNEL_PREFIX=${channelPrefix}
 DEFAULT_TMUX_SESSION=${defaultTmux}
 `;
 
-  const envDir = CONFIG_DIR;
+  const envDir = CONFIG_DIR();
   if (!existsSync(envDir)) mkdirSync(envDir, { recursive: true });
   const envPath = join(envDir, '.env');
   // Atomic write with restrictive permissions (contains Slack tokens)
@@ -1424,7 +1424,7 @@ async function cmdUninstall(uninstallArgs = []) {
 
   // 3. Remove keychain credentials for non-default accounts
   const accounts = getAccounts();
-  const keychainAccounts = accounts.filter(a => a.configDir !== DEFAULT_CLAUDE_DIR);
+  const keychainAccounts = accounts.filter(a => a.configDir !== DEFAULT_CLAUDE_DIR());
   if (keychainAccounts.length > 0) {
     console.log('Removing keychain credentials...');
     for (const account of keychainAccounts) {
@@ -1440,9 +1440,9 @@ async function cmdUninstall(uninstallArgs = []) {
   }
 
   // 4. Remove ~/.claude-nonstop/ directory
-  if (existsSync(CONFIG_DIR)) {
-    console.log(`Removing ${CONFIG_DIR}...`);
-    rmSync(CONFIG_DIR, { recursive: true, force: true });
+  if (existsSync(CONFIG_DIR())) {
+    console.log(`Removing ${CONFIG_DIR()}...`);
+    rmSync(CONFIG_DIR(), { recursive: true, force: true });
     console.log('  Config directory removed.');
   }
 
@@ -1472,7 +1472,7 @@ function removeHooksFromAllProfiles() {
   const settingsPaths = accounts.map(a => join(a.configDir, 'settings.json'));
 
   // Also check default ~/.claude/settings.json if not already in accounts
-  const defaultSettings = join(DEFAULT_CLAUDE_DIR, 'settings.json');
+  const defaultSettings = join(DEFAULT_CLAUDE_DIR(), 'settings.json');
   if (!settingsPaths.includes(defaultSettings)) {
     settingsPaths.push(defaultSettings);
   }
